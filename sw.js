@@ -2,16 +2,16 @@
  * Custody Calendar — Service Worker
  */
 
-const CACHE_NAME = 'custody-calendar-v50';
+const CACHE_NAME = 'custody-calendar-v51';
 const ASSETS = [
   './',
   './index.html',
-  './css/styles.css?v=47',
+  './css/styles.css?v=51',
   './js/db.js?v=37',
   './js/holidays.js?v=27',
   './js/schedule.js?v=22',
-  './js/calendar.js?v=49',
-  './js/ui.js?v=50',
+  './js/calendar.js?v=51',
+  './js/ui.js?v=51',
   './js/app.js?v=41',
   './lib/meta-png.js?v=1',
   './manifest.json',

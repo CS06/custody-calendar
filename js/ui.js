@@ -69,13 +69,13 @@ const ui = {
     settingsPanel.addEventListener('touchend', event => {
       const start = settingsSwipe;
       settingsSwipe = null;
-      if (!start || settingsPanel.classList.contains('hidden') || event.touches.length || !event.cancelable) return;
+      if (!start || settingsPanel.classList.contains('hidden') || event.touches.length) return;
       const end = Array.from(event.changedTouches).find(touch => touch.identifier === start.identifier);
       if (!end) return;
       const dx = end.clientX - start.clientX;
       const dy = end.clientY - start.clientY;
       if (dx < 45 || dx < Math.abs(dy) * 1.5) return;
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
       this.toggleSettings();
     }, { passive: false });
 

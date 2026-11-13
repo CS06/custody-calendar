@@ -29,8 +29,8 @@ function bindCalendarSwipes(container) {
     if (!last) return;
     const dx = last.clientX - first.touch.clientX;
     const dy = last.clientY - first.touch.clientY;
-    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5 || !event.cancelable) return;
-    event.preventDefault();
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (event.cancelable) event.preventDefault();
     navigate(dx < 0 ? 1 : -1);
   }, { passive: false });
 }

@@ -480,3 +480,5 @@ body {
 #reset-data-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 #delete-child-error:not(:empty),
 #reset-data-error:not(:empty) { margin-top: 12px; color: var(--danger); }
+
+#calendar-container, .settings-panel { touch-action: pan-y pinch-zoom; }
