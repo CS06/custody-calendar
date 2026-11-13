@@ -202,7 +202,7 @@ function validateBackup(data) {
     assert(child.id == null || (typeof child.id === 'string' && child.id && !ids.has(child.id)), 'child ID');
     if (child.id) ids.add(child.id);
     const schedule = child.schedule;
-    assert(object(schedule) && date(schedule.start) && time(schedule.switchTime), 'regular schedule');
+    assert(object(schedule) && (schedule.start === '' || date(schedule.start)) && time(schedule.switchTime), 'regular schedule');
     assert(schedule.alternateWeeks == null || typeof schedule.alternateWeeks === 'boolean', 'alternating weeks');
     for (const key of ['weekATemplate', 'weekBTemplate']) {
       const template = schedule[key];

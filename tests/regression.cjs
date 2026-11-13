@@ -22,6 +22,13 @@ for (const name of ['db', 'holidays', 'schedule', 'calendar']) {
 
 vm.runInContext(`
 (async () => {
+  for (const [id, date] of [
+    ['mothers-day', '2026-05-10'], ['fathers-day', '2026-06-21'],
+    ['halloween', '2026-10-31'], ['memorial', '2026-05-25']
+  ]) {
+    const preset = getHolidayPresets().find(holiday => holiday.id === id);
+    assert.equal(localDateKey(calculateHolidayDate(preset, 2026)), date);
+  }
   const _currentUserId = 'local-user';
   const child = {
     id: 'existing', userId: 'local-user', name: 'Test child',
@@ -79,6 +86,9 @@ vm.runInContext(`
   assert.equal(day('2027-01-01', timed).switchTime, '09:00');
   assert.equal(validSchoolRange('2026-02-29', '', false), false);
   assert.match(daysOffDetails(timed, parseLocalDate('2028-01-01')), /&lt;Trip&gt;/);
+  const icons = daysOffIcons(timed, parseLocalDate('2028-01-01'));
+  assert.deepEqual([...icons.matchAll(/<title>(.*?)<\\/title>/g)].map(match => match[1]),
+    ['No school', 'Off work', 'Vacation']);
   const printArea = {};
   document.getElementById = () => printArea;
   window._children = [timed];

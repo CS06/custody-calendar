@@ -18,6 +18,24 @@ const ui = {
     preloadBirthdays: true
   },
 
+  showMessage(message, { title = 'Custody Calendar', action } = {}) {
+    const dialog = document.getElementById('app-message-dialog');
+    if (dialog.open) return Promise.resolve(false);
+    const cancel = document.getElementById('app-message-cancel');
+    const ok = document.getElementById('app-message-ok');
+    document.getElementById('app-message-title').textContent = title;
+    document.getElementById('app-message-text').textContent = message;
+    cancel.hidden = !action;
+    ok.textContent = action || 'OK';
+    ok.className = action ? 'btn btn-danger' : 'btn btn-primary';
+    dialog.returnValue = '';
+    dialog.showModal();
+    (action ? cancel : ok).focus();
+    return new Promise(resolve => dialog.addEventListener('close', () => {
+      resolve(dialog.returnValue === 'ok');
+    }, { once: true }));
+  },
+
   init() {
     this.bindEvents();
     this.renderChildTabs();
@@ -61,7 +79,25 @@ const ui = {
     // Child modal
     document.getElementById('child-modal-cancel').addEventListener('click', () => this.hideChildModal());
     document.getElementById('child-modal-save').addEventListener('click', () => this.saveChildModal());
-    document.getElementById('child-modal-delete')?.addEventListener('click', () => this.deleteChildModal());
+    document.getElementById('child-modal-delete').addEventListener('click', event =>
+      this.showDeleteChildDialog(this._editingChildId, event.currentTarget));
+    const deleteDialog = document.getElementById('delete-child-dialog');
+    const deleteConfirm = document.getElementById('delete-child-confirm');
+    document.getElementById('delete-child-cancel').addEventListener('click', () => deleteDialog.close());
+    deleteConfirm.addEventListener('click', () => this.confirmDeleteChild());
+    deleteDialog.addEventListener('cancel', event => {
+      if (deleteConfirm.disabled) event.preventDefault();
+    });
+    deleteDialog.addEventListener('close', () => {
+      const trigger = this._deleteChildTrigger;
+      if (trigger?.isConnected) trigger.focus();
+      else document.getElementById('btn-add-child-settings').focus();
+    });
+
+    document.getElementById('btn-schedule-wizard').addEventListener('click', () => {
+      const child = getChild();
+      if (child) showSetupWizard(child);
+    });
 
     // Add buttons
     document.getElementById('btn-add-child').addEventListener('click', () => this.addChild());
@@ -74,13 +110,32 @@ const ui = {
       console.log('[Click] save schedule clicked');
       this.saveSchedule().catch(e => console.error('[Click] saveSchedule error:', e));
     });
-    document.getElementById('btn-reset-data').addEventListener('click', async () => {
-      if (!confirm('Permanently delete all Custody Calendar data in this browser?')) return;
+    const resetTrigger = document.getElementById('btn-reset-data');
+    const resetDialog = document.getElementById('reset-data-dialog');
+    const resetCancel = document.getElementById('reset-data-cancel');
+    const resetConfirm = document.getElementById('reset-data-confirm');
+    const resetError = document.getElementById('reset-data-error');
+    resetTrigger.addEventListener('click', () => {
+      resetError.textContent = '';
+      resetDialog.showModal();
+    });
+    resetCancel.addEventListener('click', () => resetDialog.close());
+    resetDialog.addEventListener('close', () => resetTrigger.focus());
+    resetDialog.addEventListener('cancel', event => {
+      if (resetConfirm.disabled) event.preventDefault();
+    });
+    resetConfirm.addEventListener('click', async () => {
+      resetConfirm.disabled = true;
+      resetCancel.disabled = true;
+      resetError.textContent = '';
       try {
         await clearAllData();
         location.reload();
       } catch (error) {
-        alert('Could not reset Custody Calendar. ' + error.message);
+        resetError.textContent = 'Could not reset Custody Calendar. ' + error.message;
+        resetConfirm.disabled = false;
+        resetCancel.disabled = false;
+        resetCancel.focus();
       }
     });
     document.getElementById('btn-save-appearance').addEventListener('click', () => this.saveAppearance());
@@ -93,29 +148,8 @@ const ui = {
       });
     });
 
-    // Alternate weeks toggle — flip Week B to match opposite of Week A
-    document.getElementById('setting-alternate-weeks')?.addEventListener('change', (e) => {
-      const isChecked = e.target.checked;
-      const weekABtns = document.querySelectorAll('#setting-week-a .week-day-btn');
-      const weekBBtns = document.querySelectorAll('#setting-week-b .week-day-btn');
-      
-      // Update Week B to be opposite of Week A
-      weekABtns.forEach((btn, idx) => {
-        if (weekBBtns[idx]) {
-          const aCurrent = btn.classList.contains('mother') ? 'mother' : 'father';
-          const bOpposite = aCurrent === 'mother' ? 'father' : 'mother';
-          
-          const bCurrent = weekBBtns[idx].classList.contains('mother') ? 'mother' : 'father';
-          weekBBtns[idx].classList.remove(bCurrent);
-          weekBBtns[idx].classList.add(bOpposite);
-        }
-      });
-      
-      // Show/hide Week B based on toggle
-      const weekBContainer = document.getElementById('setting-week-b');
-      if (weekBContainer) {
-        weekBContainer.classList.toggle('hidden', !isChecked);
-      }
+    document.getElementById('setting-alternate-weeks').addEventListener('change', event => {
+      document.getElementById('settings-week-b').classList.toggle('hidden', !event.target.checked);
     });
 
     document.getElementById('days-off-form').addEventListener('submit', event => {
@@ -205,66 +239,56 @@ const ui = {
         await saveChild(child);
         window._children = window._children.map(c => c.id === this._editingChildId ? child : c);
         this.renderChildTabs();
-        this.renderSettingsChildren();
+        this.renderSettings();
       }
-    } else {
-      // Add new child
-      const child = {
-        id: generateId(),
-        userId: _currentUserId,
-        name,
-        schedule: {
-          start: localDateKey(new Date()),
-          startingParent: 'mother',
-          switchTime: '08:30',
-          weekATemplate: ['father','mother','mother','mother','mother','mother','mother'],
-          weekBTemplate: ['mother','father','father','father','father','father','father'],
-          alternateWeeks: true,
-        },
-        holidays: [],
-        overrides: []
-      };
-
-      await saveChild(child);
-      window._children.push(child);
-      setActiveChild(child.id);
-      this.renderChildTabs();
     }
 
     this.hideChildModal();
   },
 
-  async deleteChildModal() {
-    if (!this._editingChildId) return;
-    
-    const child = window._children.find(c => c.id === this._editingChildId);
-    const confirmMsg = child 
-      ? `Delete "${child.name}" and all their data?`
-      : 'Delete this child and all their data?';
-    
-    if (!confirm(confirmMsg)) return;
-    
-    await deleteChild(this._editingChildId);
-    window._children = window._children.filter(c => c.id !== this._editingChildId);
-    
-    if (window.currentChildId === this._editingChildId) {
-      window.currentChildId = window._children[0]?.id || null;
+  showDeleteChildDialog(id, trigger) {
+    const child = window._children.find(entry => entry.id === id);
+    if (!child) return;
+    this._deletingChildId = id;
+    this._deleteChildTrigger = trigger;
+    document.getElementById('delete-child-description').textContent =
+      `This permanently deletes ${child.name} and their saved schedule.`;
+    document.getElementById('delete-child-error').textContent = '';
+    document.getElementById('delete-child-dialog').showModal();
+  },
+
+  async confirmDeleteChild() {
+    const id = this._deletingChildId;
+    const confirmButton = document.getElementById('delete-child-confirm');
+    const cancelButton = document.getElementById('delete-child-cancel');
+    if (!id || confirmButton.disabled) return;
+    confirmButton.disabled = true;
+    cancelButton.disabled = true;
+    document.getElementById('delete-child-error').textContent = '';
+    try {
+      await deleteChild(id);
+      window._children = window._children.filter(child => child.id !== id);
+      if (this._editingChildId === id) this.hideChildModal();
+      this._deleteChildTrigger = null;
+      setActiveChild(window._children.some(child => child.id === window.currentChildId)
+        ? window.currentChildId : window._children[0]?.id || null);
+      this.renderChildTabs();
+      document.getElementById('delete-child-dialog').close();
+    } catch (error) {
+      document.getElementById('delete-child-error').textContent = 'Could not delete the child. ' + error.message;
+      cancelButton.disabled = false;
+      cancelButton.focus();
+    } finally {
+      confirmButton.disabled = false;
+      cancelButton.disabled = false;
     }
-    
-    this.renderChildTabs();
-    this.renderSettingsChildren();
-    this.hideChildModal();
   },
 
   async addChild() {
-    this.showChildModal(null);
+    showSetupWizard();
   },
 
   async editChildName(id) {
-    this.showChildModal(id);
-  },
-
-  async deleteChild(id) {
     this.showChildModal(id);
   },
 
@@ -272,14 +296,7 @@ const ui = {
   toggleSettings() {
     const panel = document.getElementById('settings-panel');
     panel.classList.toggle('hidden');
-    if (!panel.classList.contains('hidden')) {
-      this.renderSettingsSchedule();
-      this.renderSettingsChildren();
-      this.renderSettingsHolidays();
-      this.renderSettingsOverrides();
-      this.renderSettingsAppearance();
-      this.renderDaysOff();
-    }
+    this.renderSettings();
   },
 
   renderDaysOff() {
@@ -306,17 +323,19 @@ const ui = {
           .filter(child => entry.childIds?.includes(child.id)).map(child => child.name).join(', ')].filter(Boolean).join(' · ');
       const actions = document.createElement('div');
       actions.className = 'override-actions';
-      for (const [label, action] of [
-        ['Edit', () => this.editDayOff(identity, entry)],
-        ['Delete', () => {
-          if (confirm('Delete this entry from all calendars it applies to?')) {
+      for (const [label, icon, action] of [
+        ['Edit', '✎', () => this.editDayOff(identity, entry)],
+        ['Delete', '×', async () => {
+          if (await this.showMessage('This removes the entry from every calendar it applies to.', { title: 'Delete days off?', action: 'Delete' })) {
             this.updateDaysOff(identity, null);
           }
         }]
       ]) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.textContent = label;
+        button.textContent = icon;
+        button.title = label;
+        button.setAttribute('aria-label', label + ' ' + text.textContent);
         button.addEventListener('click', action);
         actions.append(button);
       }
@@ -355,7 +374,7 @@ const ui = {
     document.getElementById('day-off-type').focus();
   },
 
-  saveDayOff() {
+  async saveDayOff() {
     const child = getChild();
     if (!child) return;
     const entry = {
@@ -366,13 +385,13 @@ const ui = {
       repeat: document.getElementById('days-off-repeat').checked
     };
     if (!validSchoolRange(entry.start, entry.end, entry.repeat)) {
-      alert('Choose a valid date range. A yearly entry must span less than a year.');
+      await this.showMessage('Choose a valid date range. A yearly entry must span less than a year.');
       return;
     }
     entry.childIds = document.getElementById('days-off-all').checked ? null :
       Array.from(document.querySelectorAll('#days-off-children input:checked'), input => input.value);
     if (entry.childIds?.length === 0) {
-      alert('Select at least one child or choose All children.');
+      await this.showMessage('Select at least one child or choose All children.');
       return;
     }
     this.updateDaysOff(this._editingDayOff, entry);
@@ -390,37 +409,46 @@ const ui = {
       this.renderDaysOff();
       renderCalendar();
     } catch (error) {
-      alert('Could not save days off. ' + error.message);
+      await this.showMessage('Could not save days off. ' + error.message);
     } finally {
       this._savingDaysOff = false;
     }
   },
 
   renderSettings() {
-    // Placeholder — actual rendering happens in toggleSettings
+    if (document.getElementById('settings-panel').classList.contains('hidden')) return;
+    this.renderSettingsSchedule();
+    this.renderSettingsChildren();
+    this.renderSettingsHolidays();
+    this.renderSettingsOverrides();
+    this.renderSettingsAppearance();
+    this.renderDaysOff();
   },
 
   async renderSettingsSchedule() {
     const child = getChild();
-    if (!child) return;
+    document.getElementById('settings-active-child').textContent = child
+      ? 'Editing schedule for ' + child.name : 'Select a child to edit a schedule.';
+    document.getElementById('btn-save-schedule').disabled = !child;
+    document.getElementById('btn-schedule-wizard').disabled = !child;
 
     const startDateInput = document.getElementById('setting-start-date');
-    if (startDateInput) startDateInput.value = child.schedule.start || '';
+    if (startDateInput) startDateInput.value = child?.schedule.start || '';
     const switchTimeInput = document.getElementById('setting-switch-time');
-    if (switchTimeInput) switchTimeInput.value = child.schedule.switchTime || '08:30';
+    if (switchTimeInput) switchTimeInput.value = child?.schedule.switchTime || '08:30';
     const altWeeksCheckbox = document.getElementById('setting-alternate-weeks');
-    if (altWeeksCheckbox) altWeeksCheckbox.checked = child.schedule.alternateWeeks !== false;
+    if (altWeeksCheckbox) altWeeksCheckbox.checked = !!child && child.schedule.alternateWeeks !== false;
 
     // Show/hide schedule editor based on template type
     const editor = document.getElementById('settings-schedule-editor');
-    const isCustom = child.schedule.weekATemplate && child.schedule.weekATemplate.length === 7;
+    const isCustom = !!child;
     if (editor) {
       editor.classList.toggle('hidden', !isCustom);
     }
 
     // Week templates
-    this.renderWeekGrid('settings-week-a', child.schedule.weekATemplate || []);
-    this.renderWeekGrid('settings-week-b', child.schedule.weekBTemplate || [], !child.schedule.alternateWeeks);
+    this.renderWeekGrid('settings-week-a', child?.schedule.weekATemplate || []);
+    this.renderWeekGrid('settings-week-b', child?.schedule.weekBTemplate?.length ? child.schedule.weekBTemplate : child?.schedule.weekATemplate || [], !altWeeksCheckbox.checked);
   },
 
   renderWeekGrid(containerId, template, hideLabel) {
@@ -449,27 +477,30 @@ const ui = {
     btn.textContent = DAY_ABBR[day] + '\n' + (next === 'mother' ? 'Mom' : 'Dad');
     btn.style.whiteSpace = 'pre-line';
 
-    // Update template in memory
-    const isWeekB = !!btn.closest('#setting-week-b');
-    const key = isWeekB ? 'weekBTemplate' : 'weekATemplate';
-    child.schedule[key][day] = next;
+
   },
 
   async saveSchedule() {
     const child = getChild();
     if (!child) return;
 
-    child.schedule.start = document.getElementById('setting-start-date').value;
+    const start = document.getElementById('setting-start-date').value;
+    if (!start) {
+      await this.showMessage('Choose a start date for ' + child.name + '\x27s schedule.');
+      document.getElementById('setting-start-date').focus();
+      return;
+    }
+    child.schedule.start = start;
     child.schedule.switchTime = document.getElementById('setting-switch-time').value;
     child.schedule.alternateWeeks = document.getElementById('setting-alternate-weeks').checked;
 
     // Collect templates from DOM
     const weekA = [];
     const weekB = [];
-    document.querySelectorAll('#setting-week-a .week-day-btn').forEach(btn => {
+    document.querySelectorAll('#settings-week-a .week-day-btn').forEach(btn => {
       weekA.push(btn.classList.contains('mother') ? 'mother' : 'father');
     });
-    document.querySelectorAll('#setting-week-b .week-day-btn').forEach(btn => {
+    document.querySelectorAll('#settings-week-b .week-day-btn').forEach(btn => {
       weekB.push(btn.classList.contains('mother') ? 'mother' : 'father');
     });
     child.schedule.weekATemplate = weekA;
@@ -495,7 +526,7 @@ const ui = {
     for (const button of container.querySelectorAll('[data-child-action]')) {
       button.addEventListener('click', () => {
         if (button.dataset.childAction === 'edit') this.editChildName(button.dataset.childId);
-        else this.deleteChild(button.dataset.childId);
+        else this.showDeleteChildDialog(button.dataset.childId, button);
       });
     }
   },
@@ -503,9 +534,9 @@ const ui = {
   // ===== Holidays Settings =====
   async renderSettingsHolidays() {
     const child = getChild();
-    if (!child) return;
     const container = document.getElementById('holidays-list');
     if (!container) return;
+    if (!child) { container.replaceChildren(); return; }
 
     let html = '';
     for (let i = 0; i < (child.holidays || []).length; i++) {
@@ -528,7 +559,7 @@ const ui = {
     this._editingHoliday = holidayIndex !== undefined ? holidayIndex : null;
     const modal = document.getElementById('event-modal');
     document.getElementById('modal-title').textContent = this._editingHoliday ? 'Edit Holiday' : 'Add Holiday';
-    document.getElementById('modal-delete').classList.toggle('hidden', !this._editingHoliday);
+    document.getElementById('modal-delete').classList.toggle('hidden', this._editingHoliday === null);
 
     const body = document.getElementById('modal-body');
     const h = this._editingHoliday !== null ? child.holidays[this._editingHoliday] : { type: 'fixed', params: {}, evenParent: 'mother', oddParent: 'mother', offset: 0, duration: 0, startTime: '', endTime: '' };
@@ -695,7 +726,7 @@ const ui = {
     if (this._editingHoliday !== null || this._editingHoliday === null && document.getElementById('holiday-name')) {
       // Saving a holiday
       const name = document.getElementById('holiday-name')?.value.trim();
-      if (!name) { alert('Please enter a holiday name'); return; }
+      if (!name) { await this.showMessage('Please enter a holiday name'); return; }
 
       const type = document.getElementById('holiday-type')?.value || 'fixed';
       const params = {};
@@ -722,7 +753,7 @@ const ui = {
       if ((duration === 0 && endTime && parseTime(endTime) <= parseTime(startTime)) ||
           duration < 0 || duration > 30 || Math.abs(offset) > 30 ||
           !calculateHolidayDate({ type, params }, 2028)) {
-        alert('Enter a valid holiday date, offset and time range.');
+        await this.showMessage('Enter a valid holiday date, offset and time range.');
         return;
       }
       const holiday = { name, type, params, evenParent, oddParent, offset, duration, startTime, endTime };
@@ -744,7 +775,7 @@ const ui = {
     } else if (this._editingOverride !== null || this._editingOverride === null && document.getElementById('override-name')) {
       // Saving an override
       const name = document.getElementById('override-name')?.value.trim();
-      if (!name) { alert('Please enter a description'); return; }
+      if (!name) { await this.showMessage('Please enter a description'); return; }
 
       const activeParentBtn = document.querySelector('#modal-body .parent-btn.active');
       const parent = activeParentBtn?.dataset.parent || 'mother';
@@ -753,7 +784,7 @@ const ui = {
       const time = document.getElementById('override-time')?.value || '';
 
       if (!date || (endDate && endDate < date)) {
-        alert('Choose a start date and an end date on or after it.');
+        await this.showMessage('Choose a start date and an end date on or after it.');
         return;
       }
       const override = { name, parent, date, endDate, time };
@@ -776,24 +807,11 @@ const ui = {
     this.renderSettingsOverrides();
   },
 
-  deleteModal() {
-    const child = getChild();
-    if (!child) return;
-
-    if (this._editingHoliday !== null) {
-      child.holidays.splice(this._editingHoliday, 1);
-      this._editingHoliday = null;
-    } else if (this._editingOverride !== null) {
-      child.overrides.splice(this._editingOverride, 1);
-      this._editingOverride = null;
-    }
-
-    saveChild(child).then(() => {
-      this.hideModal();
-      renderCalendar();
-      this.renderSettingsHolidays();
-      this.renderSettingsOverrides();
-    });
+  async deleteModal() {
+    const deleted = this._editingHoliday !== null
+      ? await this.deleteHoliday(this._editingHoliday)
+      : await this.deleteOverride(this._editingOverride);
+    if (deleted) this.hideModal();
   },
 
   hideModal() {
@@ -834,12 +852,21 @@ const ui = {
 
   async deleteHoliday(index) {
     const child = getChild();
-    if (!child || !child.holidays) return;
-    if (!confirm(`Delete "${child.holidays[index].name}"?`)) return;
-    child.holidays.splice(index, 1);
-    await saveChild(child);
-    this.renderSettingsHolidays();
-    renderCalendar();
+    const entry = child?.holidays?.[index];
+    if (!entry || !await this.showMessage(`Remove "${entry.name}" from this calendar?`, {
+      title: 'Delete holiday?', action: 'Delete'
+    })) return false;
+    const updated = { ...child, holidays: child.holidays.filter(item => item !== entry) };
+    try {
+      await saveChild(updated);
+      window._children = window._children.map(item => item.id === child.id ? updated : item);
+      this.renderSettingsHolidays();
+      renderCalendar();
+      return true;
+    } catch (error) {
+      await this.showMessage('Could not delete the entry. ' + error.message);
+      return false;
+    }
   },
 
   // ===== Appearance Settings =====
@@ -861,7 +888,7 @@ const ui = {
       await setConfig('colors', window._colors);
     } catch (e) {
       console.error('[saveAppearance] setConfig error:', e);
-      alert('Failed to save colors: ' + e.message);
+      await this.showMessage('Failed to save colors: ' + e.message);
       return;
     }
 
@@ -876,9 +903,9 @@ const ui = {
   // ===== Overrides Settings =====
   async renderSettingsOverrides() {
     const child = getChild();
-    if (!child) return;
     const container = document.getElementById('overrides-list');
     if (!container) return;
+    if (!child) { container.replaceChildren(); return; }
 
     let html = '';
     for (let i = 0; i < (child.overrides || []).length; i++) {
@@ -890,12 +917,21 @@ const ui = {
 
   async deleteOverride(index) {
     const child = getChild();
-    if (!child || !child.overrides) return;
-    if (!confirm('Delete this one-time change?')) return;
-    child.overrides.splice(index, 1);
-    await saveChild(child);
-    this.renderSettingsOverrides();
-    renderCalendar();
+    const entry = child?.overrides?.[index];
+    if (!entry || !await this.showMessage('Remove this one-time change from the calendar?', {
+      title: 'Delete one-time change?', action: 'Delete'
+    })) return false;
+    const updated = { ...child, overrides: child.overrides.filter(item => item !== entry) };
+    try {
+      await saveChild(updated);
+      window._children = window._children.map(item => item.id === child.id ? updated : item);
+      this.renderSettingsOverrides();
+      renderCalendar();
+      return true;
+    } catch (error) {
+      await this.showMessage('Could not delete the entry. ' + error.message);
+      return false;
+    }
   },
 
   // ===== Export / Import =====
@@ -1129,18 +1165,18 @@ const ui = {
     const input = document.getElementById('io-file-input');
     const file = input.files[0] || this._backupFile;
     if (this._importing) return;
-    if (!file) { alert('Choose a backup file first.'); return; }
+    if (!file) { await this.showMessage('Choose a backup file first.'); return; }
     const replace = document.querySelector('input[name="import-strategy"]:checked')?.value === 'replace';
     const includeChildren = document.getElementById('import-children').checked;
     const includeColors = document.getElementById('import-colors').checked;
-    if (replace && includeChildren && !confirm('Replace all saved children and schedules with this backup?')) return;
+    if (replace && includeChildren && !await this.showMessage('This replaces all saved children and schedules with those in the backup.', { title: 'Replace saved schedules?', action: 'Replace all' })) return;
     this._importing = true;
     try {
       await importData(await readBackup(file), { replace, includeChildren, includeColors });
       this.hideIOModal();
       this.finishBackupImport();
     } catch (error) {
-      alert('Could not import backup. ' + error.message);
+      await this.showMessage('Could not import backup. ' + error.message);
     } finally {
       this._importing = false;
     }
@@ -1218,3 +1254,4 @@ const ui = {
 };
 
 window.ui = ui;
+

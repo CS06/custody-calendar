@@ -34,8 +34,7 @@ async function initApp() {
   if (setupDone && window._children.length > 0) {
     wizard?.classList.add('hidden');
   } else {
-    wizard?.setAttribute('style', 'display: flex !important;');
-    wizard?.classList.remove('hidden');
+    showSetupWizard();
   }
 
   // Browser notice dismiss
@@ -90,21 +89,40 @@ document.getElementById('btn-theme')?.addEventListener('click', () => {
 
 
 // ===== Setup Wizard =====
-function showSetupWizard() {
-  document.getElementById('setup-wizard').classList.remove('hidden');
+function showSetupWizard(child = null) {
+  const additional = window._children.length > 0;
+  const schedule = child?.schedule;
   ui._wizardData = {
-    childName: '',
-    startingParent: 'mother',
-    scheduleStart: localDateKey(new Date()),
-    template: 'alternating-weeks',
-    weekATemplate: ['father','mother','mother','mother','mother','mother','mother'],
-    weekBTemplate: ['mother','father','father','father','father','father','father'],
-    alternateWeeks: true,
-    preloadHolidays: true,
-    preloadBirthdays: true
+    childId: child?.id,
+    childName: child?.name || '',
+    startingParent: schedule?.startingParent || 'mother',
+    scheduleStart: schedule?.start || localDateKey(new Date()),
+    switchTime: schedule?.switchTime || '08:30',
+    template: child ? 'custom' : 'alternating-weeks',
+    weekATemplate: schedule?.weekATemplate?.length ? [...schedule.weekATemplate] : Array(7).fill('mother'),
+    weekBTemplate: schedule?.weekBTemplate?.length ? [...schedule.weekBTemplate] : Array(7).fill('father'),
+    alternateWeeks: schedule?.alternateWeeks !== false
   };
+  const wizard = document.getElementById('setup-wizard');
+  wizard.style.display = '';
+  wizard.classList.remove('hidden');
+  document.getElementById('wizard-title').textContent = child ? 'Edit schedule' :
+    additional ? 'Add a child' : 'Welcome to Custody Calendar';
+  document.getElementById('wizard-import-section').hidden = additional;
+  document.getElementById('wizard-cancel').hidden = !additional;
+  document.getElementById('child-name').value = ui._wizardData.childName;
+  document.getElementById('wizard-next-1').disabled = !child;
+  document.getElementById('schedule-start').value = ui._wizardData.scheduleStart;
+  document.getElementById('wizard-switch-time').value = ui._wizardData.switchTime;
+  handleParentToggle(ui._wizardData.startingParent, 'wizard-step-2');
+  document.querySelectorAll('.template-btn').forEach(button =>
+    button.classList.toggle('active', button.dataset.template === ui._wizardData.template));
   showWizardStep(1);
 }
+
+document.getElementById('wizard-cancel').addEventListener('click', () => {
+  document.getElementById('setup-wizard').classList.add('hidden');
+});
 
 function showWizardStep(step) {
   document.querySelectorAll('.wizard-step').forEach(s => s.classList.add('hidden'));
@@ -230,7 +248,7 @@ document.getElementById('wizard-import-input')?.addEventListener('change', async
     ui.finishBackupImport();
   } catch (err) {
     console.error('Wizard import error:', err);
-    alert('Error importing file: ' + err.message);
+    ui.showMessage('Error importing file: ' + err.message);
   }
 });
 function handleTemplateClick(templateName) {
@@ -242,8 +260,7 @@ function handleTemplateClick(templateName) {
   // Set default templates for preset types
   if (templateName === 'alternating-weeks') {
     // Default: Sunday = father, Mon-Sat = mother (and vice versa for Week B)
-    ui._wizardData.weekATemplate = ['father','mother','mother','mother','mother','mother','mother'];
-    ui._wizardData.weekBTemplate = ['mother','father','father','father','father','father','father'];
+    setAlternatingWizardWeeks(ui._wizardData.startingParent);
     ui._wizardData.alternateWeeks = true;
   } else if (templateName === '2-2-3') {
     ui._wizardData.weekATemplate = ['mother','mother','father','father','mother','mother','mother'];
@@ -256,6 +273,12 @@ function handleTemplateClick(templateName) {
   renderWizardTemplateGrid();
 }
 
+function setAlternatingWizardWeeks(parent) {
+  const otherParent = parent === 'mother' ? 'father' : 'mother';
+  ui._wizardData.weekATemplate = [otherParent, ...Array(6).fill(parent)];
+  ui._wizardData.weekBTemplate = [parent, ...Array(6).fill(otherParent)];
+}
+
 function handleParentToggle(parentName, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -263,6 +286,9 @@ function handleParentToggle(parentName, containerId) {
   const btn = container.querySelector(`.parent-btn[data-parent="${parentName}"]`);
   if (btn) btn.classList.add('active');
   ui._wizardData.startingParent = parentName;
+  if (ui._wizardData.template === 'alternating-weeks') {
+    setAlternatingWizardWeeks(parentName);
+  }
 }
 
 // Wire up template buttons directly
@@ -283,7 +309,9 @@ document.getElementById('wizard-next-1')?.addEventListener('click', () => {
 document.getElementById('wizard-back-2')?.addEventListener('click', () => showWizardStep(1));
 document.getElementById('wizard-next-2')?.addEventListener('click', () => {
   const startDate = document.getElementById('schedule-start').value;
-  if (startDate) ui._wizardData.scheduleStart = startDate;
+  if (!startDate) { ui.showMessage('Choose a start date.').then(() => document.getElementById('schedule-start').focus()); return; }
+  ui._wizardData.scheduleStart = startDate;
+  ui._wizardData.switchTime = document.getElementById('wizard-switch-time').value || '08:30';
   showWizardStep(3);
 });
 document.getElementById('wizard-back-3')?.addEventListener('click', () => showWizardStep(2));
@@ -317,56 +345,24 @@ document.getElementById('wizard-alternate-weeks')?.addEventListener('change', (e
 function finishWizard() {
   const data = ui._wizardData;
 
-  // Adjust templates based on starting parent and start date
-  let weekATemplate = data.weekATemplate.slice();
-  let weekBTemplate = data.weekBTemplate ? data.weekBTemplate.slice() : [];
-  const scheduleStart = data.scheduleStart || localDateKey(new Date());
-  const startDate = new Date(scheduleStart + 'T00:00:00');
-  const startDayOfWeek = startDate.getDay(); // 0=Sun, 1=Mon, etc.
-
-  // For alternating weeks, rotate template so start date aligns with starting parent
-  if (data.template === 'alternating-weeks') {
-    const startParent = data.startingParent;
-
-    // Rotate template so that the start day's position gets the selected parent
-    // This shifts the pattern to align with when the schedule actually starts
-    function rotateTemplate(template, shift) {
-      var rotated = [];
-      for (var i = 0; i < 7; i++) {
-        rotated[(i + shift) % 7] = template[i];
-      }
-      return rotated;
-    }
-
-    // Rotate so startDayOfWeek maps to the starting parent's position in the pattern
-    // If user picked Dad for Sunday-only pattern, and start is Thursday, rotate so Thu gets Dad
-    var dayInTemplate = weekATemplate[startDayOfWeek];
-    if (dayInTemplate !== startParent) {
-      // Find which index in template has the starting parent
-      var targetIndex = weekATemplate.indexOf(startParent);
-      if (targetIndex >= 0) {
-        var shift = (startDayOfWeek - targetIndex + 7) % 7;
-        weekATemplate = rotateTemplate(weekATemplate, shift);
-        weekBTemplate = rotateTemplate(weekBTemplate, shift);
-      }
-    }
-  }
-
-  // Create child
+  const existing = window._children.find(child => child.id === data.childId);
+  if (data.childId && !existing) return;
   const child = {
-    id: generateId(),
+    holidays: [],
+    overrides: [],
+    ...existing,
+    id: existing?.id || generateId(),
     userId: _currentUserId,
     name: data.childName,
     schedule: {
-      start: scheduleStart,
+      ...existing?.schedule,
+      start: data.scheduleStart,
       startingParent: data.startingParent,
-      switchTime: '08:30',
-      weekATemplate: weekATemplate,
-      weekBTemplate: weekBTemplate,
+      switchTime: data.switchTime,
+      weekATemplate: data.weekATemplate,
+      weekBTemplate: data.weekBTemplate,
       alternateWeeks: data.alternateWeeks || data.template !== 'custom'
-    },
-    holidays: [],
-    overrides: []
+    }
   };
 
   // Disable button to prevent double-click
@@ -375,8 +371,9 @@ function finishWizard() {
 
   // Save to DB and update state
   saveChild(child).then(function() {
-    window._children.push(child);
-    window.currentChildId = child.id;
+    if (existing) window._children = window._children.map(item => item.id === child.id ? child : item);
+    else window._children.push(child);
+    setActiveChild(child.id);
 
     // Mark setup as done
     localStorage.setItem('custody-calendar-setup', '1');
@@ -388,11 +385,10 @@ function finishWizard() {
 
     // Re-render
     ui.renderChildTabs();
-    renderCalendar();
-    updateLegend();
   }).catch(function(e) {
     console.error('[Wizard] Save error:', e);
-    alert('Error saving schedule: ' + e.message);
+    ui.showMessage('Error saving schedule: ' + e.message);
+  }).finally(() => {
     if (finishBtn) finishBtn.disabled = false;
   });
 }

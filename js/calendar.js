@@ -41,6 +41,7 @@ function setView(view) {
 
 function setActiveChild(childId) {
   window.currentChildId = childId;
+  window.ui?.renderSettings();
   renderCalendar();
   updateLegend();
 }
@@ -110,11 +111,10 @@ function renderMonthView(container, title, child) {
     if (s.parent) {
       const color = s.parent === 'mother' ? colors.mother : colors.father;
       colorBlock = `<div class="day-color-block" style="background:${color};border-radius:4px;padding:4px;">`;
-      if (s.holiday && !s.override) colorBlock += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.holiday.name)}</div>`;
-      else if (s.override) colorBlock += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.override.name || 'Override')}</div>`;
-      colorBlock += `</div>`;
+      if (s.override) colorBlock += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.override.name || 'Override')}</div>`;
+      colorBlock += holidayBadge(s) + `</div>`;
     }
-    html += `<div class="day-cell other-month"><div class="day-number">${day}</div>${colorBlock}</div>`;
+    html += `<div class="day-cell other-month"><div class="day-number">${day}${daysOffIcons(child, new Date(prevYear, prevMonth, day))}</div>${colorBlock}</div>`;
   }
 
   // Current month days
@@ -129,24 +129,29 @@ function renderMonthView(container, title, child) {
     html += '"' + dateAction(date, s, child) + '>';
 
     // Day number always at top
-    html += `<div class="day-number">${day}${daysOffBadge(child, date)}</div>`;
+    html += `<div class="day-number">${day}${daysOffIcons(child, date)}</div>`;
 
     if (s.isSplit) {
       const leftColor = colors[s.firstParent] || 'transparent';
       const rightColor = colors[s.segments[1].parent] || 'transparent';
-      const label = s.override?.name || s.holiday?.name || '';
-      html += `<div class="split-left" style="background:${leftColor}"><div class="split-label">${escapeHTML(label)}${s.segments.length > 2 ? ' +' : ''}</div></div>`;
+      const label = s.override?.name || '';
+      const returns = s.segments.length === 3 && s.firstParent &&
+        s.segments[2].parent === s.firstParent && (s.holiday || s.override);
+      html += `<div class="split-left" style="background:${leftColor}">${holidayBadge(s)}<div class="split-label">${escapeHTML(label)}${s.segments.length > 2 && !returns ? ' +' : ''}</div></div>`;
       html += `<div class="split-divider"></div><div class="split-right" style="background:${rightColor}">`;
-      html += `<div class="split-time">↕ ${formatTime(s.switchTime)}</div></div>`;
+      if (returns) {
+        html += `<div class="split-time split-return-time"><span>${formatTime(s.switchTime)}</span> - <span>${formatTime(s.segments[2].time)}</span></div>`;
+      } else {
+        html += `<div class="split-time">↕ ${formatTime(s.switchTime)}</div>`;
+      }
+      html += '</div>';
     } else if (s.parent) {
       const color = s.parent === 'mother' ? colors.mother : colors.father;
       html += `<div class="day-color-block" style="background:${color};border-radius:4px;padding:4px;">`;
-      if (s.holiday && !s.override) {
-        html += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.holiday.name)}</div>`;
-      } else if (s.override) {
+      if (s.override) {
         html += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.override.name || 'Override')}</div>`;
       }
-      html += `</div>`;
+      html += holidayBadge(s) + `</div>`;
     } else {
       // Empty day - add transparent block to maintain height
       html += `<div class="day-color-block" style="background:transparent;"></div>`;
@@ -164,11 +169,10 @@ function renderMonthView(container, title, child) {
     if (s.parent) {
       const color = s.parent === 'mother' ? colors.mother : colors.father;
       colorBlock = `<div class="day-color-block" style="background:${color};border-radius:4px;padding:4px;">`;
-      if (s.holiday && !s.override) colorBlock += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.holiday.name)}</div>`;
-      else if (s.override) colorBlock += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.override.name || 'Override')}</div>`;
-      colorBlock += `</div>`;
+      if (s.override) colorBlock += `<div class="day-label" style="background:rgba(255,255,255,0.7);">${escapeHTML(s.override.name || 'Override')}</div>`;
+      colorBlock += holidayBadge(s) + `</div>`;
     }
-    html += `<div class="day-cell other-month"><div class="day-number">${i}</div>${colorBlock}</div>`;
+    html += `<div class="day-cell other-month"><div class="day-number">${i}${daysOffIcons(child, new Date(nextYear, nextMonth, i))}</div>${colorBlock}</div>`;
   }
 
   html += '</div>';
@@ -182,6 +186,11 @@ function renderMonthView(container, title, child) {
   if (grid) {
     grid.style.setProperty('--calendar-weeks', neededRows);
   }
+}
+
+function holidayBadge(day) {
+  if (!day.holiday || day.override) return '';
+  return `<span class="holiday-badge">${escapeHTML(day.holiday.name)}</span>`;
 }
 
 function renderWeekView(container, title, child) {
@@ -335,10 +344,18 @@ function daysOffDescription(child, date) {
   return entries.map(entry => [dayOffLabel(entry), entry.name].filter(Boolean).join(': ')).join(', ');
 }
 
-function daysOffBadge(child, date) {
-  const label = daysOffDescription(child, date);
-  const types = [...new Set(daysOffForDate(child, date).map(dayOffLabel))];
-  return label ? `<span class="days-off-badge" title="${escapeHTML(label)}">${types.length === 1 ? types[0] : 'Days off'}</span>` : '';
+const DAY_OFF_ICONS = {
+  school: '<path d="m1 4 5-3 5 3-5 3zM3 5.5V8q3 2 6 0V5.5M11 4v4"/>',
+  work: '<rect x="1" y="4" width="10" height="7" rx="1"/><path d="M4 4V2h4v2M1 7h10M5 7v1h2V7"/>',
+  vacation: '<rect x="3" y="4" width="6" height="6" rx="1"/><path d="M5 4V1h2v3M4 10v1m4-1v1"/>'
+};
+
+function daysOffIcons(child, date) {
+  const types = new Set(daysOffForDate(child, date).map(entry => entry.type || 'school'));
+  if (!types.size) return '';
+  const icons = Object.entries(DAY_OFF_ICONS).filter(([type]) => types.has(type)).map(([type, shape]) =>
+    `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-linecap="round"><title>${dayOffLabel({ type })}</title>${shape}</svg>`);
+  return `<span class="days-off-icons" aria-hidden="true">${icons.join('')}</span>`;
 }
 
 function dayOffLabel(entry) {

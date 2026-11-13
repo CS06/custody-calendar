@@ -7,7 +7,7 @@
   <meta name="description" content="Track and visualize child custody schedules">
   <meta name="theme-color" content="#4F46E5">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/styles.css?v=23">
+  <link rel="stylesheet" href="css/styles.css?v=47">
   <!-- PWA icons -->
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
@@ -25,11 +25,11 @@
     <!-- Setup wizard overlay -->
     <div id="setup-wizard" class="overlay">
       <div class="wizard-card">
-        <h2>Welcome to Custody Calendar</h2>
-        <p class="setup-hint">Let's set up your first child's schedule. This only takes a minute.</p>
+        <h2 id="wizard-title">Welcome to Custody Calendar</h2>
+        <p class="setup-hint">Set the start date, handoff time, and weekly rotation.</p>
 
         <div id="wizard-step-1" class="wizard-step active">
-          <h3>Add Your First Child</h3>
+          <h3>Child details</h3>
           <div class="form-group">
             <label for="child-name">Child's name</label>
             <input type="text" id="child-name" placeholder="e.g., Emma" maxlength="30">
@@ -37,7 +37,7 @@
           <div class="wizard-nav">
             <button id="wizard-next-1" class="btn btn-primary" disabled>Next</button>
           </div>
-          <div class="wizard-import-section">
+          <div class="wizard-import-section" id="wizard-import-section">
             <p class="setup-hint">Or import existing data:</p>
             <input type="file" id="wizard-import-input" accept=".json,.png,image/png,image/json" style="display:none;">
             <button class="btn btn-secondary" onclick="document.getElementById('wizard-import-input').click()">Choose file...</button>
@@ -49,8 +49,10 @@
           <h3>When does the schedule start?</h3>
           <div class="form-group">
             <label for="schedule-start">Start date</label>
-            <input type="date" id="schedule-start" value="">
+            <input type="date" id="schedule-start" required>
           </div>
+          <label for="wizard-switch-time">Switch time</label>
+          <input type="time" id="wizard-switch-time" value="08:30">
           <p class="setup-hint">This is the first day of the custody schedule.</p>
           <label>On this date there's a switch — which parent will the child stay with?</label>
           <div class="parent-toggle">
@@ -111,6 +113,7 @@
 
         <div class="wizard-progress">
           <span id="wizard-step-indicator">Step 1 of 4</span>
+          <button id="wizard-cancel" class="btn btn-secondary" type="button" hidden>Cancel setup</button>
         </div>
       </div>
     </div>
@@ -180,6 +183,8 @@
         <!-- Schedule section -->
         <section class="settings-section">
           <h3>Schedule</h3>
+          <p id="settings-active-child"></p>
+          <button id="btn-schedule-wizard" class="btn btn-secondary" type="button">Open schedule wizard</button>
           <label for="setting-start-date">Start date</label>
           <input type="date" id="setting-start-date">
           <label for="setting-switch-time">Switch time</label>
@@ -308,6 +313,35 @@
       </div>
     </dialog>
 
+    <dialog id="reset-data-dialog" class="modal-card" aria-labelledby="reset-data-title" aria-describedby="reset-data-description">
+      <h3 id="reset-data-title">Reset app data?</h3>
+      <p id="reset-data-description">This permanently deletes the children, schedules, and settings saved in this browser.</p>
+      <p id="reset-data-error" role="alert"></p>
+      <div class="modal-actions">
+        <button id="reset-data-cancel" class="btn btn-secondary" type="button" autofocus>Cancel</button>
+        <button id="reset-data-confirm" class="btn btn-danger" type="button">Delete app data</button>
+      </div>
+    </dialog>
+
+    <dialog id="delete-child-dialog" class="modal-card" aria-labelledby="delete-child-title" aria-describedby="delete-child-description">
+      <h3 id="delete-child-title">Delete child?</h3>
+      <p id="delete-child-description"></p>
+      <p id="delete-child-error" role="alert"></p>
+      <div class="modal-actions">
+        <button id="delete-child-cancel" class="btn btn-secondary" type="button" autofocus>Cancel</button>
+        <button id="delete-child-confirm" class="btn btn-danger" type="button">Delete child</button>
+      </div>
+    </dialog>
+
+    <dialog id="app-message-dialog" class="modal-card" aria-labelledby="app-message-title" aria-describedby="app-message-text">
+      <h3 id="app-message-title"></h3>
+      <p id="app-message-text"></p>
+      <form method="dialog" class="modal-actions">
+        <button id="app-message-cancel" class="btn btn-secondary" value="cancel">Cancel</button>
+        <button id="app-message-ok" class="btn btn-primary" value="ok">OK</button>
+      </form>
+    </dialog>
+
     <!-- Child modal -->
     <div id="child-modal" class="modal hidden">
       <div class="modal-card">
@@ -352,11 +386,11 @@
   </div>
 
   <script src="lib/meta-png.js?v=1"></script>
-  <script src="js/db.js?v=22"></script>
+  <script src="js/db.js?v=37"></script>
   <script src="js/holidays.js?v=27"></script>
   <script src="js/schedule.js?v=22"></script>
-  <script src="js/calendar.js?v=22"></script>
-  <script src="js/ui.js?v=26"></script>
-  <script src="js/app.js?v=22"></script>
+  <script src="js/calendar.js?v=47"></script>
+  <script src="js/ui.js?v=41"></script>
+  <script src="js/app.js?v=41"></script>
 </body>
 </html>
