@@ -11,6 +11,10 @@ Custody Calendar is a browser-based calendar for tracking parenting schedules, h
 - **Backups.** Export selected children's schedules as a PNG backup and restore from a Custody Calendar PNG or JSON backup.
 - **Offline use.** The app can work offline after its files have been cached. Browsers that support web app installation can add it to the home screen or desktop.
 
+- ## Try it now
+- [Open Custody Calendar](https://cs06.github.io/custody-calendar/)
+- Install it from your browser using the install instructions below.
+
 ## Run locally
 
 The app uses plain HTML, CSS, and JavaScript. It needs a static web server and has no build step. If Python is installed, run this command from the project folder:
