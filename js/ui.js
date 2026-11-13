@@ -976,7 +976,9 @@ const ui = {
       html += '</div>';
       html += '<p>The PNG contains private schedule data beyond what is visible in the image.</p>';
       html += '<button class="btn btn-primary" onclick="ui.doExport()">Download PNG backup</button>';
+      html += ' <button class="btn btn-secondary" id="download-json-backup">Download JSON backup</button>';
       body.innerHTML = html;
+      document.getElementById('download-json-backup').addEventListener('click', () => this.doExport('json'));
     } else {
       title.textContent = 'Import Data';
       let html = '<div class="io-option"><h4>Select what to import:</h4>';
@@ -1131,7 +1133,7 @@ const ui = {
 </svg>`;
   },
 
-  async doExport() {
+  async doExport(format = 'png') {
     const children = window._children || [];
     const exportChildren = [];
     const checks = document.querySelectorAll('.export-child-check:checked');
@@ -1154,33 +1156,28 @@ const ui = {
       data.colors = window._colors;
     }
 
-    try {
-      const canvas = this.generateExportImage(data);
-      const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      const pngBuffer = await pngBlob.arrayBuffer();
-      const jsonStr = JSON.stringify(data);
-
-      // Embed JSON into PNG metadata
-      const pngWithMetadata = MetaPNG.addMetadata(new Uint8Array(pngBuffer), 'custody-calendar-export', jsonStr);
-      const finalBlob = new Blob([pngWithMetadata], { type: 'image/png' });
-
-      const url = URL.createObjectURL(finalBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `custody-calendar-export-${localDateKey(new Date())}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('Export failed:', e);
-      // Fallback: JSON only
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `custody-calendar-export-${localDateKey(new Date())}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+    if (format === 'png') {
+      try {
+        const canvas = this.generateExportImage(data);
+        const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        const pngBuffer = await pngBlob.arrayBuffer();
+        const png = MetaPNG.addMetadata(new Uint8Array(pngBuffer), 'custody-calendar-export', JSON.stringify(data));
+        this.downloadBackup(new Blob([png], { type: 'image/png' }), 'png');
+        return;
+      } catch (error) {
+        console.error('PNG export failed:', error);
+      }
     }
+    this.downloadBackup(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'json');
+  },
+
+  downloadBackup(blob, extension) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `custody-calendar-export-${localDateKey(new Date())}.${extension}`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
   async doImport() {
@@ -1234,10 +1231,19 @@ const ui = {
   // ===== Install Prompt =====
   setupInstallPrompt() {
     let deferredPrompt = null;
+    const banner = document.getElementById('install-banner');
+    const home = document.createComment('Install banner position');
+    banner.before(home);
+    const wizard = document.getElementById('setup-wizard');
+    const placeBanner = () => {
+      if (wizard.classList.contains('hidden')) home.after(banner);
+      else wizard.querySelector('.wizard-card').prepend(banner);
+    };
+    new MutationObserver(placeBanner).observe(wizard, { attributes: true, attributeFilter: ['class'] });
+    placeBanner();
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      const banner = document.getElementById('install-banner');
       if (!banner.classList.contains('hidden')) return;
       banner.classList.remove('hidden');
     });

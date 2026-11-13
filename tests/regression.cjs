@@ -102,7 +102,11 @@ vm.runInContext(`
   const backup = { schemaVersion: 1, children: [timed], colors: { mother: '#ff0000' } };
   await assert.rejects(importData({ ...backup, children: [{ ...timed, schedule: {} }] }, { replace: true }));
   assert.equal((await getAllChildren(_currentUserId))[0].name, 'Test child');
-  await importData(backup);
+  const jsonBackup = await readBackup({
+    name: 'custody-calendar-export.json', type: 'application/json',
+    text: async () => JSON.stringify(backup)
+  });
+  await importData(jsonBackup);
   assert.equal((await getAllChildren(_currentUserId)).length, 2);
   const write = localStorage.setItem;
   localStorage.setItem = () => { throw new Error('Storage full'); };
