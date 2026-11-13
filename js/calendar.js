@@ -9,8 +9,30 @@ let _currentView = 'month'; // 'month', 'week', 'day'
 let _currentDate = new Date();
 
 function initCalendar() {
+  bindCalendarSwipes(document.getElementById('calendar-container'));
   renderCalendar();
   updateLegend();
+}
+
+function bindCalendarSwipes(container) {
+  let start = null;
+  container.addEventListener('touchstart', event => {
+    start = event.touches.length === 1
+      ? { touch: event.touches[0], view: _currentView } : null;
+  }, { passive: true });
+  container.addEventListener('touchcancel', () => { start = null; }, { passive: true });
+  container.addEventListener('touchend', event => {
+    const first = start;
+    start = null;
+    if (!first || _currentView !== first.view || event.touches.length) return;
+    const last = Array.from(event.changedTouches).find(touch => touch.identifier === first.touch.identifier);
+    if (!last) return;
+    const dx = last.clientX - first.touch.clientX;
+    const dy = last.clientY - first.touch.clientY;
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5 || !event.cancelable) return;
+    event.preventDefault();
+    navigate(dx < 0 ? 1 : -1);
+  }, { passive: false });
 }
 
 function navigate(direction) {

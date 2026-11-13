@@ -57,6 +57,28 @@ const ui = {
     document.getElementById('btn-settings').addEventListener('click', () => this.toggleSettings());
     document.getElementById('btn-close-settings').addEventListener('click', () => this.toggleSettings());
 
+    const settingsPanel = document.getElementById('settings-panel');
+    let settingsSwipe = null;
+    settingsPanel.addEventListener('touchstart', event => {
+      settingsSwipe = window.matchMedia('(max-width: 640px)').matches &&
+        !settingsPanel.classList.contains('hidden') && event.touches.length === 1 &&
+        !event.target.closest('input, select, textarea, label, button, a')
+        ? event.touches[0] : null;
+    }, { passive: true });
+    settingsPanel.addEventListener('touchcancel', () => { settingsSwipe = null; }, { passive: true });
+    settingsPanel.addEventListener('touchend', event => {
+      const start = settingsSwipe;
+      settingsSwipe = null;
+      if (!start || settingsPanel.classList.contains('hidden') || event.touches.length || !event.cancelable) return;
+      const end = Array.from(event.changedTouches).find(touch => touch.identifier === start.identifier);
+      if (!end) return;
+      const dx = end.clientX - start.clientX;
+      const dy = end.clientY - start.clientY;
+      if (dx < 45 || dx < Math.abs(dy) * 1.5) return;
+      event.preventDefault();
+      this.toggleSettings();
+    }, { passive: false });
+
     const help = document.getElementById('help-screen');
     document.getElementById('btn-help').addEventListener('click', () => {
       this.toggleSettings();
