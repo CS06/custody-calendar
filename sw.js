@@ -2,7 +2,7 @@
  * Custody Calendar — Service Worker
  */
 
-const CACHE_NAME = 'custody-calendar-v24';
+const CACHE_NAME = 'custody-calendar-v25';
 const ASSETS = [
   './',
   './index.html',
@@ -14,7 +14,9 @@ const ASSETS = [
   './js/ui.js?v=23',
   './js/app.js?v=22',
   './lib/meta-png.js?v=1',
-  './manifest.json'
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
