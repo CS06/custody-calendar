@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custody Calendar</title>
+  <meta name="description" content="Track and visualize child custody schedules">
+  <meta name="theme-color" content="#4F46E5">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/styles.css?v=23">
+  <!-- PWA icons -->
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+</head>
+<body>
+  <div id="app">
+    <!-- Install banner -->
+    <div id="install-banner" class="install-banner hidden">
+      <span>Install Custody Calendar for easier access</span>
+      <button id="install-btn">Install</button>
+      <button id="install-dismiss" aria-label="Dismiss">×</button>
+    </div>
+
+    <!-- Setup wizard overlay -->
+    <div id="setup-wizard" class="overlay">
+      <div class="wizard-card">
+        <h2>Welcome to Custody Calendar</h2>
+        <p class="setup-hint">Let's set up your first child's schedule. This only takes a minute.</p>
+
+        <div id="wizard-step-1" class="wizard-step active">
+          <h3>Add Your First Child</h3>
+          <div class="form-group">
+            <label for="child-name">Child's name</label>
+            <input type="text" id="child-name" placeholder="e.g., Emma" maxlength="30">
+          </div>
+          <div class="wizard-nav">
+            <button id="wizard-next-1" class="btn btn-primary" disabled>Next</button>
+          </div>
+          <div class="wizard-import-section">
+            <p class="setup-hint">Or import existing data:</p>
+            <input type="file" id="wizard-import-input" accept=".json,.png,image/png,image/json" style="display:none;">
+            <button class="btn btn-secondary" onclick="document.getElementById('wizard-import-input').click()">Choose file...</button>
+            <span id="wizard-import-name" style="font-size:0.8rem;color:var(--text-muted);margin-left:8px;"></span>
+          </div>
+        </div>
+
+        <div id="wizard-step-2" class="wizard-step hidden">
+          <h3>When does the schedule start?</h3>
+          <div class="form-group">
+            <label for="schedule-start">Start date</label>
+            <input type="date" id="schedule-start" value="">
+          </div>
+          <p class="setup-hint">This is the first day of the custody schedule.</p>
+          <label>On this date there's a switch — which parent will the child stay with?</label>
+          <div class="parent-toggle">
+            <button class="parent-btn active" data-parent="mother" onclick="ui.selectWizardParent(this)">Mother</button>
+            <button class="parent-btn" data-parent="father" onclick="ui.selectWizardParent(this)">Father</button>
+          </div>
+          <div class="wizard-nav">
+            <button id="wizard-back-2" class="btn btn-secondary">Back</button>
+            <button id="wizard-next-2" class="btn btn-primary">Next</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-3" class="wizard-step hidden">
+          <h3>Choose a schedule pattern</h3>
+          <p class="setup-hint">Select how often the child switches between parents.</p>
+          <div class="template-grid">
+            <div class="template-btn active" data-template="alternating-weeks" onclick="handleTemplateClick('alternating-weeks')">
+              <strong>Alternating Weeks</strong>
+              <span>One week with each parent</span>
+            </div>
+            <div class="template-btn" data-template="2-2-3" onclick="handleTemplateClick('2-2-3')">
+              <strong>2-2-3 Schedule</strong>
+              <span>2 days Mom, 2 days Dad, 3 days Mom (alternating)</span>
+            </div>
+            <div class="template-btn" data-template="every-other-weekend" onclick="handleTemplateClick('every-other-weekend')">
+              <strong>Every Other Weekend</strong>
+              <span>Weekends with one parent, weekdays with the other</span>
+            </div>
+            <div class="template-btn" data-template="custom" onclick="handleTemplateClick('custom')">
+              <strong>Custom Pattern</strong>
+              <span>Build your own schedule</span>
+            </div>
+          </div>
+          <div id="custom-schedule-editor" class="hidden">
+            <p class="setup-hint">Tap each day to assign it to a parent.</p>
+            <p id="week-pattern-hint">This pattern alternates each week:</p>
+            <div class="week-grid" id="wizard-week-a"></div>
+            <div class="week-grid hidden" id="wizard-week-b"></div>
+            <label class="toggle-label hidden" id="alternate-toggle-label">
+              <input type="checkbox" id="wizard-alternate-weeks" disabled>
+              Alternate between first and second week patterns
+            </label>
+          </div>
+          <div class="wizard-nav">
+            <button id="wizard-back-3" class="btn btn-secondary">Back</button>
+            <button id="wizard-next-3" class="btn btn-primary">Next</button>
+          </div>
+        </div>
+
+        <div id="wizard-step-4" class="wizard-step hidden">
+          <h3>Holidays &amp; Special Days</h3>
+          <p>You can add holidays anytime from Settings. Click the + button in the Holidays section.</p>
+          <div class="wizard-nav">
+            <button id="wizard-back-4" class="btn btn-secondary">Back</button>
+            <button id="wizard-finish" class="btn btn-primary">Finish &amp; Start</button>
+          </div>
+        </div>
+
+        <div class="wizard-progress">
+          <span id="wizard-step-indicator">Step 1 of 4</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-browser notice -->
+    <div id="browser-notice" class="notice-banner hidden">
+      <span>Your schedule data is stored in this browser. Use Export/Import to share between devices.</span>
+      <button id="browser-notice-dismiss" aria-label="Dismiss">×</button>
+    </div>
+
+    <!-- Main app -->
+    <header class="app-header">
+      <h1>Custody Calendar</h1>
+      <nav class="header-actions">
+        <button id="btn-export" class="icon-btn" title="Export data" aria-label="Export data">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button id="btn-import" class="icon-btn" title="Import data" aria-label="Import data">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </button>
+        <button id="btn-theme" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+          <svg id="theme-icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg id="theme-icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Child selector -->
+    <div class="child-selector-bar">
+      <button id="btn-add-child" class="btn btn-small" title="Add child">+ Add</button>
+      <div id="child-tabs" class="child-tabs"></div>
+    </div>
+
+    <!-- View mode toggle (mobile) -->
+    <div class="view-toggle" id="view-toggle">
+      <button class="view-btn active" aria-pressed="true" data-view="month">Month</button>
+      <button class="view-btn" aria-pressed="false" data-view="week">Week</button>
+      <button class="view-btn" aria-pressed="false" data-view="day">Day</button>
+    </div>
+
+    <!-- Calendar header -->
+    <div class="calendar-header">
+      <button id="btn-prev" class="nav-btn" aria-label="Previous">‹</button>
+      <h2 id="calendar-title"></h2>
+      <button id="btn-next" class="nav-btn" aria-label="Next">›</button>
+      <button id="btn-today" class="btn btn-small">Today</button>
+    </div>
+
+    <!-- Calendar container -->
+    <main id="calendar-container"></main>
+    <section id="print-calendar" aria-label="Printable month"></section>
+
+    <!-- Legend -->
+    <div class="legend" id="legend"></div>
+
+    <!-- Settings panel -->
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button id="btn-help" class="btn btn-secondary" type="button">Help</button>
+        <button id="btn-close-settings" class="icon-btn" aria-label="Close settings">×</button>
+      </div>
+      <div class="settings-content">
+        <!-- Schedule section -->
+        <section class="settings-section">
+          <h3>Schedule</h3>
+          <label for="setting-start-date">Start date</label>
+          <input type="date" id="setting-start-date">
+          <label for="setting-switch-time">Switch time</label>
+          <input type="time" id="setting-switch-time" value="08:30">
+          <label class="toggle-label">
+            <input type="checkbox" id="setting-alternate-weeks">
+            Alternate between first and second week patterns
+          </label>
+          <div id="settings-schedule-editor">
+            <p class="setup-hint">Tap each day to assign it to a parent.</p>
+            <p id="settings-week-pattern-hint">Define the first week pattern:</p>
+            <div class="week-grid" id="settings-week-a"></div>
+            <div class="week-grid hidden" id="settings-week-b"></div>
+          </div>
+          <button id="btn-save-schedule" class="btn btn-primary">Save Schedule</button>
+        </section>
+
+        <!-- Children section -->
+        <section class="settings-section">
+          <h3>Children</h3>
+          <div id="children-list"></div>
+          <button id="btn-add-child-settings" class="btn btn-secondary">+ Add Child</button>
+        </section>
+
+        <!-- Holidays section -->
+        <section class="settings-section">
+          <h3>Holidays</h3>
+          <div id="holidays-list"></div>
+          <button id="btn-add-holiday" class="btn btn-secondary">+ Add Holiday</button>
+        </section>
+
+        <!-- One-time changes section -->
+        <section class="settings-section">
+          <h3>One-Time Changes</h3>
+          <div id="overrides-list"></div>
+          <button id="btn-add-override" class="btn btn-secondary">+ Add Override</button>
+        </section>
+
+        <section class="settings-section">
+          <h3>Days off</h3>
+          <p>Add a day or date range to one or more calendars.</p>
+          <form id="days-off-form">
+            <label for="day-off-type">Type</label>
+            <select id="day-off-type">
+              <option value="school">No school</option>
+              <option value="work">Off work</option>
+              <option value="vacation">Vacation</option>
+            </select>
+            <label for="days-off-name">Label (optional)</label>
+            <input id="days-off-name" type="text" maxlength="80" placeholder="No school">
+            <label for="days-off-start">First day off</label>
+            <input id="days-off-start" type="date" required>
+            <label for="days-off-end">Last day off (optional)</label>
+            <input id="days-off-end" type="date">
+            <fieldset id="days-off-scope">
+              <legend>Applies to</legend>
+              <label><input id="days-off-all" type="checkbox"> All children</label>
+              <div id="days-off-children"></div>
+            </fieldset>
+            <label><input id="days-off-repeat" type="checkbox"> Repeat on these dates every year</label>
+            <button class="btn btn-primary" id="days-off-save">Add days off</button>
+            <button class="btn btn-secondary hidden" type="button" id="days-off-cancel">Cancel edit</button>
+          </form>
+          <div id="days-off-list"></div>
+        </section>
+
+        <section class="settings-section">
+          <h3>Print</h3>
+          <button class="btn btn-secondary" id="btn-print-month">Print current month</button>
+        </section>
+
+        <!-- Appearance section -->
+        <section class="settings-section">
+          <h3>Appearance</h3>
+          <label for="setting-mother-color">Mother's day color</label>
+          <input type="color" id="setting-mother-color" value="#93C5FD">
+          <label for="setting-father-color">Father's day color</label>
+          <input type="color" id="setting-father-color" value="#FCA5A5">
+          <button id="btn-save-appearance" class="btn btn-primary">Save Colors</button>
+        </section>
+        <section class="settings-section">
+          <h3>Local data</h3>
+          <button id="btn-reset-data" class="btn btn-danger">Reset app data</button>
+        </section>
+      </div>
+    </div>
+
+    <dialog id="help-screen" aria-labelledby="help-title">
+      <header>
+        <h2 id="help-title">Custody Calendar Help</h2>
+        <form method="dialog">
+          <button class="btn btn-secondary" autofocus>Back to calendar</button>
+        </form>
+      </header>
+      <div class="help-content">
+        <section>
+          <h3>Read the calendar</h3>
+          <p>Choose a child, then use Month, Week, or Day to see their schedule. Tap a date to open its details. The legend shows which color belongs to each parent. A split day has a handoff, with the time shown in the day details.</p>
+        </section>
+        <section>
+          <h3>Set the regular schedule</h3>
+          <p>In Settings, choose the child whose schedule you want to edit. Set the start date and usual handoff time, then assign each weekday in Week A. Turn on Alternate weeks to use Week B every other week. The rotation starts on the schedule start date. Save your changes before leaving Settings.</p>
+        </section>
+        <section>
+          <h3>Add holidays and one-time changes</h3>
+          <p>Use Holidays for recurring exceptions. You can assign different parents in even and odd years and set start and end times. Use One-Time Changes for a swap or trip on specific dates. One-time changes take priority over holidays, and holidays take priority over the regular schedule. If two entries of the same type overlap, the first listed entry wins.</p>
+        </section>
+        <section>
+          <h3>Mark days off</h3>
+          <p>Add No school, Off work, or Vacation for a date or range. These labels leave custody assignments intact. No school starts with the current child selected. Off work and Vacation start with All children selected, which also covers children you add later. Use Applies to to choose who sees an entry. Turn on yearly repeat for dates that stay the same each year.</p>
+        </section>
+        <section>
+          <h3>Manage children and appearance</h3>
+          <p>Use Children in Settings to add, rename, or remove a child. Each child has their own custody schedule. Use Appearance to change the parent colors, or the theme button in the main header to switch between light and dark.</p>
+        </section>
+        <section>
+          <h3>Print the month</h3>
+          <p>Use Print current month in Settings to print the selected child's month or save it as a PDF.</p>
+        </section>
+        <section>
+          <h3>Import and export backups</h3>
+          <p>Your calendar data is stored in this browser. To make a backup or move it to another device, use Export in the main header. Select the children to include, choose whether to include appearance colors, then select Download PNG backup.</p>
+          <p>To restore a backup, use Import in the main header and choose a Custody Calendar PNG or JSON backup. Choose what to restore. Merge adds the children in the backup as new entries and keeps existing children. Replace all removes the existing children and schedules and restores those in the backup.</p>
+          <p>Keep backups private. The PNG contains schedule data beyond what's visible in the image. Export a backup before clearing browser data or using Reset app data.</p>
+        </section>
+      </div>
+    </dialog>
+
+    <!-- Child modal -->
+    <div id="child-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="child-modal-title">Add Child</h3>
+        <div class="form-group">
+          <label for="child-modal-name">Child's name</label>
+          <input type="text" id="child-modal-name" maxlength="30" placeholder="e.g., Emma">
+        </div>
+        <div class="modal-actions">
+          <button id="child-modal-delete" class="btn btn-danger hidden">Delete</button>
+          <button id="child-modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="child-modal-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event modal -->
+    <div id="event-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="modal-title">Add Event</h3>
+        <div id="modal-body"></div>
+        <div class="modal-actions">
+          <button id="modal-delete" class="btn btn-secondary hidden">Delete</button>
+          <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="modal-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import/Export modal -->
+    <div id="io-modal" class="modal hidden">
+      <div class="modal-card io-card">
+        <h3 id="io-title">Import / Export Data</h3>
+        <div id="io-body"></div>
+        <div class="modal-actions">
+          <button id="io-close" class="btn btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <input type="file" id="import-file-input" accept=".json,.png,image/png" style="display: none;">
+  </div>
+
+  <script src="lib/meta-png.js?v=1"></script>
+  <script src="js/db.js?v=22"></script>
+  <script src="js/holidays.js?v=22"></script>
+  <script src="js/schedule.js?v=22"></script>
+  <script src="js/calendar.js?v=22"></script>
+  <script src="js/ui.js?v=23"></script>
+  <script src="js/app.js?v=22"></script>
+</body>
+</html>
