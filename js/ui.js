@@ -578,6 +578,9 @@ const ui = {
       <input type="time" id="holiday-end-time" value="${escapeHTML(h.endTime || '')}">
     `;
 
+    document.getElementById('holiday-type').addEventListener('change', event => {
+      this.renderHolidayParams({ type: event.target.value, params: {} });
+    });
     this.renderHolidayParams(h);
     modal.classList.remove('hidden');
   },
